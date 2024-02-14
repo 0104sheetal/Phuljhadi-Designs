@@ -1,6 +1,7 @@
 // @ts-check
 // import { DiscountApplicationStrategy } from "../generated/api";
-const { DiscountApplicationStrategy } = require("../generated/api.ts");
+// const { DiscountApplicationStrategy } = require("../generated/api.ts");
+import { DiscountApplicationStrategy } from "../generated/api.ts";
 // import {RunInput, FunctionRunResult, Target, ProductVariant } from "../generated/api";
 /**
  * @typedef {import("../generated/api").RunInput} RunInput

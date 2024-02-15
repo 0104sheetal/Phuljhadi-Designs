@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const fetch = require('node-fetch');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -14,15 +13,17 @@ app.get('/auth/callback', async (req, res) => {
         return res.status(400).send('Required parameters missing');
     }
 
-    const accessTokenRequestUrl = `https://${shop}/admin/oauth/access_token`;
-    const accessTokenPayload = {
-        client_id: process.env.SHOPIFY_API_KEY,
-        client_secret: process.env.SHOPIFY_API_SECRET,
-        code,
-    };
-
     try {
-        const tokenResponse = await fetch(accessTokenRequestUrl, {
+        const fetch = await import('node-fetch');
+
+        const accessTokenRequestUrl = `https://${shop}/admin/oauth/access_token`;
+        const accessTokenPayload = {
+            client_id: process.env.SHOPIFY_API_KEY,
+            client_secret: process.env.SHOPIFY_API_SECRET,
+            code,
+        };
+
+        const tokenResponse = await fetch.default(accessTokenRequestUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

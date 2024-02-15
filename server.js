@@ -1,20 +1,15 @@
 require('dotenv').config();
 const express = require('express');
-const fetch = require('node-fetch');
-
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Extract the Shopify access token and store domain from environment variables
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
 const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
 const SHOPIFY_GRAPHQL_URL = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/2024-01/graphql.json`;
 
-// Define the route that will apply the discount
 app.post('/apply-discount', async (req, res) => {
-  // The GraphQL mutation as provided
   const mutation = `
     mutation {
       discountAutomaticAppCreate(automaticAppDiscount: {
@@ -34,6 +29,9 @@ app.post('/apply-discount', async (req, res) => {
   `;
 
   try {
+    // Dynamically import node-fetch
+    const { default: fetch } = await import('node-fetch');
+
     const response = await fetch(SHOPIFY_GRAPHQL_URL, {
       method: 'POST',
       headers: {

@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const fetch = require('node-fetch');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -21,7 +20,10 @@ app.get('/auth/callback', async (req, res) => {
     };
 
     try {
-        const tokenResponse = await fetch(accessTokenRequestUrl, {
+        // Use dynamic import for node-fetch
+        const fetch = await import('node-fetch');
+
+        const tokenResponse = await fetch.default(accessTokenRequestUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const fetch = require('node-fetch');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -9,6 +10,7 @@ app.get('/auth/callback', async (req, res) => {
     const { shop, code } = req.query;
 
     if (!shop || !code) {
+        console.error('Missing parameters: shop or code');
         return res.status(400).send('Required parameters missing');
     }
 
@@ -20,10 +22,7 @@ app.get('/auth/callback', async (req, res) => {
     };
 
     try {
-        // Use dynamic import for node-fetch
-        const fetch = await import('node-fetch');
-
-        const tokenResponse = await fetch.default(accessTokenRequestUrl, {
+        const tokenResponse = await fetch(accessTokenRequestUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -36,12 +35,13 @@ app.get('/auth/callback', async (req, res) => {
         if (tokenResponse.ok) {
             const accessToken = tokenData.access_token;
 
-            // TODO: Store the access token securely
+            // Log the access token
             console.log(`Access token for shop ${shop}: ${accessToken}`);
-            
+
             // Redirect to a success page or the app dashboard
-            res.redirect(`https://${shop}/admin/apps`);
+            res.redirect('/');
         } else {
+            console.error(`Failed to get an access token: ${tokenData.error_description || 'Unknown error'}`);
             throw new Error(`Failed to get an access token: ${tokenData.error_description || 'Unknown error'}`);
         }
     } catch (error) {

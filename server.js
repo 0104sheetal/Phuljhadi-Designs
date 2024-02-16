@@ -1,81 +1,64 @@
 require('dotenv').config();
 const express = require('express');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const bodyParser = require('body-parser');
 const app = express();
 const port = process.env.PORT || 3000;
 
-const { SHOPIFY_ACCESS_TOKEN } = process.env;
+app.use(bodyParser.json());
 
-// ...
-
-// Endpoint to create a 10% off discount code
-app.get('/create-discount-code', async (req, res) => {
-  const shop = req.query.shop;
-  const shopifyAdminUrl = `https://${shop}/admin/api/2022-01/`;
-
-  // Define payload for the price rule
-  const priceRulePayload = {
-    price_rule: {
-      title: '10% Off Cart',
-      target_type: 'line_item',
-      target_selection: 'all',
-      allocation_method: 'across',
-      value_type: 'percentage',
-      value: '-10.0',
-      customer_selection: 'all',
-      starts_at: new Date().toISOString(),
+// Discount logic functions
+function calculateProductTypeCount(cartItems, productType) {
+  let productTypeCount = 0;
+  cartItems.forEach(item => {
+    if (item.merchandise.__typename === "ProductVariant" && item.merchandise.product.productType === productType) {
+      productTypeCount += item.quantity;
     }
-  };
+  });
+  return productTypeCount;
+}
 
-  try {
-    // Create a price rule
-    const priceRuleResponse = await fetch(`${shopifyAdminUrl}price_rules.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-      },
-      body: JSON.stringify(priceRulePayload),
-    });
-
-    const priceRuleJson = await priceRuleResponse.json();
-    if (!priceRuleResponse.ok) {
-      throw new Error(`HTTP error! status: ${priceRuleResponse.status}`);
+function calculateDiscount(productTypeCount, productType) {
+  if (productTypeCount >= 2) {
+    const remainder = productTypeCount % 3;
+    const bulkCount = Math.floor(productTypeCount / 3);
+    if (productType === "1500") {
+      return remainder === 2 ? 300 + bulkCount * 750 : bulkCount * 750;
+    } else if (productType === "1000") {
+      return remainder === 2 ? 598 + bulkCount * 1097 : bulkCount * 1097;
     }
-
-    // Use the created price rule ID to create a discount code
-    const discountCode = `10OFF-${Date.now()}`; // Generate a unique code
-    const discountCodePayload = {
-      discount_code: {
-        code: discountCode
-      }
-    };
-
-    const discountCodeResponse = await fetch(`${shopifyAdminUrl}price_rules/${priceRuleJson.price_rule.id}/discount_codes.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-      },
-      body: JSON.stringify(discountCodePayload),
-    });
-
-    const discountCodeJson = await discountCodeResponse.json();
-    if (!discountCodeResponse.ok) {
-      throw new Error(`HTTP error! status: ${discountCodeResponse.status}`);
-    }
-
-    res.json({
-      price_rule: priceRuleJson.price_rule,
-      discount_code: discountCodeJson.discount_code
-    });
-  } catch (error) {
-    console.error('Error creating discount code:', error);
-    res.status(500).send(`Error creating discount code: ${error.message}`);
   }
-});
+  return 0;
+}
 
-// ...
+// Endpoint to calculate discounts based on cart items
+app.post('/calculate-discount', (req, res) => {
+  console.log("Calculating discount for the cart");
+
+  // Extract cart from request body
+  const { cart } = req.body;
+
+  // Perform discount calculation
+  const productType1000Count = calculateProductTypeCount(cart.lines, "1000");
+  const productType1500Count = calculateProductTypeCount(cart.lines, "1500");
+
+  const discount1000 = calculateDiscount(productType1000Count, "1000");
+  const discount1500 = calculateDiscount(productType1500Count, "1500");
+
+  if (discount1000 === 0 && discount1500 === 0) {
+    console.log("No products with the specified product types.");
+    res.json({ discount: 0, message: "No discount applied" });
+    return;
+  }
+
+  const discountAmount = discount1000 + discount1500;
+  console.log(`Applying a discount of Rs ${discountAmount} to ${productType1000Count + productType1500Count} products.`);
+
+  // Respond with calculated discount amount
+  res.json({
+    discount: discountAmount,
+    message: "Discount calculated"
+  });
+});
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);

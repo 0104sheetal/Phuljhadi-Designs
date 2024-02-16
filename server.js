@@ -1,17 +1,16 @@
 require('dotenv').config();
 const express = require('express');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const app = express();
 const port = process.env.PORT || 3000;
 
-const { SHOPIFY_API_KEY, SHOPIFY_API_SECRET, SCOPES, HOST, SHOPIFY_ACCESS_TOKEN } = process.env;
+const { SHOPIFY_API_KEY, SHOPIFY_API_SECRET, SCOPES, HOST, SHOPIFY_ACCESS_TOKEN, SHOPIFY_ORDER_DISCOUNT_ID } = process.env;
 
 // Root endpoint just to check if the app is running
 app.get('/', (req, res) => {
   res.send('Hello World!');
 });
 
-// OAuth entry point
+// Endpoint to initiate OAuth with Shopify
 app.get('/shopify', (req, res) => {
   const shop = req.query.shop;
   if (shop) {
@@ -50,15 +49,26 @@ app.get('/shopify/callback', async (req, res) => {
   }
 });
 
-// Example of making a GraphQL API call to Shopify
-app.get('/shopify-api-call', async (req, res) => {
-  const graphqlQuery = {
-    query: `{
-      shop {
-        name
-        email
+// Endpoint to create an automatic discount in Shopify
+app.get('/create-discount', async (req, res) => {
+  const graphqlMutation = {
+    query: `
+      mutation {
+        discountAutomaticAppCreate(automaticAppDiscount: {
+          title: "Messold",
+          functionId: "${SHOPIFY_ORDER_DISCOUNT_ID}",
+          startsAt: "2023-11-22T00:00:00Z"
+        }) {
+          automaticAppDiscount {
+            discountId
+          }
+          userErrors {
+            field
+            message
+          }
+        }
       }
-    }`
+    `
   };
 
   try {
@@ -68,13 +78,13 @@ app.get('/shopify-api-call', async (req, res) => {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
       },
-      body: JSON.stringify(graphqlQuery),
+      body: JSON.stringify(graphqlMutation),
     });
     const shopifyJson = await shopifyResponse.json();
     res.json(shopifyJson);
   } catch (error) {
-    console.error('Error making Shopify API call:', error);
-    res.status(500).send('Error making Shopify API call');
+    console.error('Error creating discount:', error);
+    res.status(500).send('Error creating discount');
   }
 });
 

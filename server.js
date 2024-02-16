@@ -1,62 +1,60 @@
 require('dotenv').config();
 const express = require('express');
+const fetch = require('node-fetch');
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(express.json());
+const { SHOPIFY_API_KEY, SHOPIFY_API_SECRET, SCOPES, HOST } = process.env;
 
-app.get('/auth/callback', async (req, res) => {
-    const { shop, code } = req.query;
+// In-memory storage for the access token
+let accessToken = '';
 
-    if (!shop || !code) {
-        console.error('Missing parameters: shop or code');
-        return res.status(400).send('Required parameters missing');
-    }
+app.get('/shopify', (req, res) => {
+  const shop = req.query.shop;
+  if (shop) {
+    const redirectUri = `${HOST}/shopify/callback`;
+    const installUrl = `https://${shop}/admin/oauth/authorize?client_id=${SHOPIFY_API_KEY}&scope=${SCOPES}&redirect_uri=${redirectUri}`;
 
-    try {
-        const fetch = await import('node-fetch');
-
-        const accessTokenRequestUrl = `https://${shop}/admin/oauth/access_token`;
-        const accessTokenPayload = {
-            client_id: process.env.SHOPIFY_API_KEY,
-            client_secret: process.env.SHOPIFY_API_SECRET,
-            code,
-        };
-
-        const tokenResponse = await fetch.default(accessTokenRequestUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(accessTokenPayload),
-        });
-
-        const tokenData = await tokenResponse.json();
-
-        if (tokenResponse.ok) {
-            const accessToken = tokenData.access_token;
-
-            // Log the access token
-            console.log(`Access token for shop ${shop}: ${accessToken}`);
-
-            // Redirect to a success page or the app dashboard
-            res.redirect('/');
-        } else {
-            console.error(`Failed to get an access token: ${tokenData.error_description || 'Unknown error'}`);
-            throw new Error(`Failed to get an access token: ${tokenData.error_description || 'Unknown error'}`);
-        }
-    } catch (error) {
-        console.error('Access token error:', error);
-        res.status(500).send('Error during Shopify Authentication');
-    }
+    console.log('Redirecting to Shopify for authentication:', installUrl);
+    res.redirect(installUrl);
+  } else {
+    console.log('Shop parameter is missing in the request');
+    return res.status(400).send('Missing shop parameter. Please add ?shop=your-development-shop.myshopify.com to your request');
+  }
 });
 
-// Home route for the server
-app.get('/', (req, res) => {
-    res.send('Hello, world!');
+app.get('/shopify/callback', async (req, res) => {
+  const { shop, code } = req.query;
+  const accessTokenRequestUrl = `https://${shop}/admin/oauth/access_token`;
+  const accessTokenPayload = {
+    client_id: SHOPIFY_API_KEY,
+    client_secret: SHOPIFY_API_SECRET,
+    code,
+  };
+
+  try {
+    console.log('Requesting access token from Shopify...');
+    const response = await fetch(accessTokenRequestUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(accessTokenPayload),
+    });
+
+    const jsonResponse = await response.json();
+    accessToken = jsonResponse.access_token;
+    console.log('Access Token:', accessToken);
+
+    // Here the access token is stored in the accessToken variable.
+    // Note: This token should be secured, and this approach is not recommended for production.
+    res.status(200).send('Access token stored in memory');
+  } catch (error) {
+    console.error('Error during access token retrieval:', error);
+    res.status(500).send('Error during access token retrieval');
+  }
 });
 
-// Start the server
 app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+  console.log(`Server running on port ${port}`);
 });

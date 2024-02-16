@@ -1,31 +1,29 @@
 require('dotenv').config();
 const express = require('express');
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const app = express();
 const port = process.env.PORT || 3000;
 
 const { SHOPIFY_ACCESS_TOKEN } = process.env;
 
-// Endpoint to list installed apps on the Shopify store
 app.get('/list-installed-apps', async (req, res) => {
-  const shop = req.query.shop; // Make sure to pass the shop query parameter when calling this endpoint
+  const shop = req.query.shop;
   const shopifyGraphqlUrl = `https://${shop}/admin/api/2022-01/graphql.json`;
 
-  const query = `
-  {
-    appInstallations(first: 10) {
-      edges {
-        node {
-          id
-          appName
-          app {
+  const graphqlQuery = JSON.stringify({
+    query: `{
+      appInstallations(first: 10) {
+        edges {
+          node {
             id
+            appName
+            app {
+              id
+            }
           }
         }
       }
-    }
-  }
-  `;
+    }`
+  });
 
   try {
     const response = await fetch(shopifyGraphqlUrl, {
@@ -34,19 +32,16 @@ app.get('/list-installed-apps', async (req, res) => {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
       },
-      body: JSON.stringify({ query }),
+      body: graphqlQuery,
     });
 
-    const jsonResponse = await response.json();
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-    if (response.ok) {
-      res.json(jsonResponse.data.appInstallations);
-    } else {
-      res.status(response.status).json(jsonResponse);
-    }
+    const jsonResponse = await response.json();
+    res.json(jsonResponse.data.appInstallations);
   } catch (error) {
     console.error('Error fetching installed apps:', error);
-    res.status(500).send('Error fetching installed apps');
+    res.status(500).send(`Error fetching installed apps: ${error.message}`);
   }
 });
 

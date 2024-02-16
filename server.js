@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
-const request = require('request');
+const axios = require('axios');
 const bodyParser = require('body-parser');
 const app = express();
 const port = process.env.PORT || 3000;
@@ -9,7 +9,7 @@ const port = process.env.PORT || 3000;
 const apiKey = process.env.SHOPIFY_API_KEY;
 const apiSecret = process.env.SHOPIFY_API_SECRET;
 const scopes = 'write_discounts,read_products,write_products';
-const forwardingAddress = process.env.HOST; // Replace with your ngrok or Heroku URL
+const forwardingAddress = process.env.HOST;
 
 app.use(bodyParser.json());
 
@@ -37,7 +37,6 @@ app.get('/shopify/callback', (req, res) => {
         return res.status(403).send('Request origin cannot be verified');
     }
 
-    // Request for permanent access token
     const accessTokenRequestUrl = `https://${shop}/admin/oauth/access_token`;
     const accessTokenPayload = {
         client_id: apiKey,
@@ -45,15 +44,16 @@ app.get('/shopify/callback', (req, res) => {
         code,
     };
 
-    request.post(accessTokenRequestUrl, { json: accessTokenPayload }, (error, response, body) => {
-        if (error) {
-            return res.status(500).send(`Error getting OAuth access token: ${error}`);
-        }
-
-        const accessToken = body.access_token;
-        // Use access token to make API call to 'shop' endpoint
-        res.status(200).end('App installed');
-    });
+    axios.post(accessTokenRequestUrl, accessTokenPayload)
+        .then(response => {
+            const accessToken = response.data.access_token;
+            // Use access token to make API calls to 'shop' endpoint
+            res.status(200).end('App installed');
+        })
+        .catch(error => {
+            console.error('Error getting OAuth access token:', error.message);
+            res.status(500).send('Error getting OAuth access token');
+        });
 });
 
 // Webhook endpoint for cart updates
@@ -66,5 +66,5 @@ app.post('/webhook/cart-update', (req, res) => {
 
 // Start the server
 app.listen(port, () => {
-    console.log(`Example app listening at http://localhost:${port}`);
+    console.log(`Server listening at http://localhost:${port}`);
 });

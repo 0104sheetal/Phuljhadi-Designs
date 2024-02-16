@@ -21,9 +21,11 @@ app.get('/shopify', (req, res) => {
         const redirectUri = forwardingAddress + '/shopify/callback';
         const installUrl = `https://${shop}/admin/oauth/authorize?client_id=${apiKey}&scope=${scopes}&state=${state}&redirect_uri=${redirectUri}`;
 
+        console.log('Redirecting to installation URL:', installUrl);
         res.cookie('state', state);
         res.redirect(installUrl);
     } else {
+        console.error('Missing shop parameter');
         return res.status(400).send('Missing shop parameter. Please add ?shop=your-development-shop.myshopify.com to your request');
     }
 });
@@ -34,6 +36,7 @@ app.get('/shopify/callback', (req, res) => {
     const stateCookie = req.cookies.state;
 
     if (state !== stateCookie) {
+        console.error('Invalid state parameter');
         return res.status(403).send('Request origin cannot be verified');
     }
 
@@ -47,6 +50,7 @@ app.get('/shopify/callback', (req, res) => {
     axios.post(accessTokenRequestUrl, accessTokenPayload)
         .then(response => {
             const accessToken = response.data.access_token;
+            console.log('OAuth access token:', accessToken);
             // Use access token to make API calls to 'shop' endpoint
             res.status(200).end('App installed');
         })
@@ -58,6 +62,7 @@ app.get('/shopify/callback', (req, res) => {
 
 // Webhook endpoint for cart updates
 app.post('/webhook/cart-update', (req, res) => {
+    console.log('Received cart update webhook:', req.body);
     // Verify webhook authenticity
     // Apply discount logic
     // Respond to Shopify

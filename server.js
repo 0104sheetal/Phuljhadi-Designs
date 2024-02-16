@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -35,10 +36,13 @@ app.get('/list-installed-apps', async (req, res) => {
       body: graphqlQuery,
     });
 
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
     const jsonResponse = await response.json();
-    res.json(jsonResponse.data.appInstallations);
+    if (response.ok) {
+      res.json(jsonResponse.data.appInstallations);
+    } else {
+      console.error('Shopify response error:', jsonResponse);
+      res.status(response.status).json(jsonResponse);
+    }
   } catch (error) {
     console.error('Error fetching installed apps:', error);
     res.status(500).send(`Error fetching installed apps: ${error.message}`);

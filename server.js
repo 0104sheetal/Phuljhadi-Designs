@@ -1,6 +1,6 @@
+// server.js
 require('dotenv').config();
 const express = require('express');
-const fetch = require('node-fetch');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -34,6 +34,11 @@ app.get('/shopify/callback', async (req, res) => {
 
   try {
     console.log('Requesting access token from Shopify...');
+
+    // Dynamically import node-fetch
+    const nodeFetch = await import('node-fetch');
+    const fetch = nodeFetch.default;
+
     const response = await fetch(accessTokenRequestUrl, {
       method: 'POST',
       headers: {

@@ -1,28 +1,29 @@
-// server.js
 require('dotenv').config();
 const express = require('express');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const app = express();
 const port = process.env.PORT || 3000;
 
-const { SHOPIFY_API_KEY, SHOPIFY_API_SECRET, SCOPES, HOST } = process.env;
+const { SHOPIFY_API_KEY, SHOPIFY_API_SECRET, SCOPES, HOST, SHOPIFY_ACCESS_TOKEN } = process.env;
 
-// In-memory storage for the access token
-let accessToken = '';
+// Root endpoint just to check if the app is running
+app.get('/', (req, res) => {
+  res.send('Hello World!');
+});
 
+// OAuth entry point
 app.get('/shopify', (req, res) => {
   const shop = req.query.shop;
   if (shop) {
     const redirectUri = `${HOST}/shopify/callback`;
     const installUrl = `https://${shop}/admin/oauth/authorize?client_id=${SHOPIFY_API_KEY}&scope=${SCOPES}&redirect_uri=${redirectUri}`;
-
-    console.log('Redirecting to Shopify for authentication:', installUrl);
     res.redirect(installUrl);
   } else {
-    console.log('Shop parameter is missing in the request');
-    return res.status(400).send('Missing shop parameter. Please add ?shop=your-development-shop.myshopify.com to your request');
+    return res.status(400).send('Missing shop parameter. Please add ?shop=your-shop-name.myshopify.com to your request');
   }
 });
 
+// OAuth callback endpoint
 app.get('/shopify/callback', async (req, res) => {
   const { shop, code } = req.query;
   const accessTokenRequestUrl = `https://${shop}/admin/oauth/access_token`;
@@ -33,12 +34,6 @@ app.get('/shopify/callback', async (req, res) => {
   };
 
   try {
-    console.log('Requesting access token from Shopify...');
-
-    // Dynamically import node-fetch
-    const nodeFetch = await import('node-fetch');
-    const fetch = nodeFetch.default;
-
     const response = await fetch(accessTokenRequestUrl, {
       method: 'POST',
       headers: {
@@ -46,22 +41,41 @@ app.get('/shopify/callback', async (req, res) => {
       },
       body: JSON.stringify(accessTokenPayload),
     });
-
     const jsonResponse = await response.json();
-    accessToken = jsonResponse.access_token;
-    console.log('Access Token:', accessToken);
-
-    // Here the access token is stored in the accessToken variable.
-    // Note: This token should be secured, and this approach is not recommended for production.
-    res.status(200).send('Access token stored in memory');
+    console.log('Access Token:', jsonResponse.access_token);
+    res.send('Access token received and stored successfully');
   } catch (error) {
     console.error('Error during access token retrieval:', error);
     res.status(500).send('Error during access token retrieval');
   }
 });
 
-app.get('/', (req, res) => {
-  res.send('Hello World!');
+// Example of making a GraphQL API call to Shopify
+app.get('/shopify-api-call', async (req, res) => {
+  const graphqlQuery = {
+    query: `{
+      shop {
+        name
+        email
+      }
+    }`
+  };
+
+  try {
+    const shopifyResponse = await fetch(`https://${req.query.shop}/admin/api/2021-10/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+      },
+      body: JSON.stringify(graphqlQuery),
+    });
+    const shopifyJson = await shopifyResponse.json();
+    res.json(shopifyJson);
+  } catch (error) {
+    console.error('Error making Shopify API call:', error);
+    res.status(500).send('Error making Shopify API call');
+  }
 });
 
 app.listen(port, () => {

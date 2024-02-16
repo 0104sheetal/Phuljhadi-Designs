@@ -63,9 +63,7 @@ app.get('/shopify/callback', (req, res) => {
 // Webhook endpoint for cart updates
 app.post('/webhook/cart-update', (req, res) => {
     console.log('Received cart update webhook:', req.body);
-    // Verify webhook authenticity
-    // Apply discount logic
-    // Respond to Shopify
+    // Your webhook processing logic goes here
     res.status(200).send('Webhook processed');
 });
 

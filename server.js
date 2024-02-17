@@ -15,29 +15,19 @@ app.use(bodyParser.json({
 
 // Helper function to validate Shopify's HMAC signature
 function validateHMAC(headers, rawBody) {
-  const hmac = headers['x-shopify-hmac-sha256'];
-  const hash = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET).update(rawBody).digest('base64');
-  return hmac === hash; // This line was updated to match the order of comparison
+  const receivedHmac = headers['x-shopify-hmac-sha256'];
+  const calculatedHash = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET).update(rawBody, 'utf8').digest('base64');
+  
+  console.log('Received HMAC:', receivedHmac);
+  console.log('Calculated HMAC:', calculatedHash);
+  
+  return receivedHmac === calculatedHash;
 }
 
 // Function to create a discount using Shopify GraphQL API
 async function createDiscount(shop, accessToken) {
-  const mutation = `
-    mutation discountAutomaticAppCreate($input: DiscountAutomaticAppInput!) {
-      discountAutomaticAppCreate(input: $input) {
-        automaticAppDiscount {
-          id
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }
-  `;
-
-  const variables = {
-    input: {
+  const mutation = `mutation {
+    discountAutomaticAppCreate(automaticAppDiscount: {
       title: "Messold",
       startsAt: "2023-11-22T00:00:00Z",
       targetType: "LINE_ITEM",
@@ -52,13 +42,20 @@ async function createDiscount(shop, accessToken) {
           all: {}
         }
       }
+    }) {
+      automaticAppDiscount {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
     }
-  };
+  }`;
 
   try {
     const response = await axios.post(`https://${shop}/admin/api/2021-01/graphql.json`, {
-      query: mutation,
-      variables: variables
+      query: mutation
     }, {
       headers: {
         'Content-Type': 'application/json',
@@ -76,6 +73,9 @@ async function createDiscount(shop, accessToken) {
 
 // Webhook endpoint for cart updates
 app.post('/webhooks/cart/update', async (req, res) => {
+  console.log('Headers:', req.headers);
+  console.log('Raw body for HMAC validation:', req.rawBody);
+
   if (!validateHMAC(req.headers, req.rawBody)) {
     console.error('HMAC validation failed');
     return res.status(401).send('HMAC validation failed');
@@ -83,7 +83,6 @@ app.post('/webhooks/cart/update', async (req, res) => {
 
   console.log('Received cart update webhook:', req.body);
 
-  // Use your shop domain and access token from environment variables
   const shop = 'messoldtech.myshopify.com'; // Your Shopify shop domain
   const accessToken = process.env.SHOPIFY_ACCESS_TOKEN; // Access token for your Shopify app
 

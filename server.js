@@ -38,6 +38,7 @@ function validateHMAC(query) {
   return hashEquals;
 }
 
+// Route to handle app installation
 app.get('/', (req, res) => {
   console.log('Received a request at root:', req.query);
   if (req.query.shop && validateHMAC(req.query)) {
@@ -53,6 +54,7 @@ app.get('/', (req, res) => {
   }
 });
 
+// OAuth callback route
 app.get('/auth/callback', async (req, res) => {
   console.log('Received OAuth callback:', req.query);
   if (!validateHMAC(req.query)) {
@@ -72,6 +74,7 @@ app.get('/auth/callback', async (req, res) => {
     console.log('Access token received:', accessToken);
 
     // Set the access token in your environment variables (not recommended for production)
+    // In a production app, you would securely store the access token
     process.env.SHOPIFY_ACCESS_TOKEN = accessToken;
 
     console.log('App installation successful');
@@ -82,15 +85,13 @@ app.get('/auth/callback', async (req, res) => {
   }
 });
 
+// Success route
 app.get('/success', (req, res) => {
   console.log('Redirected to success page');
   res.send('The app has been successfully installed.');
 });
 
-app.get('/', (req, res) => {
-    res.send('Hello World!');
-  });
-
+// Start the server
 app.listen(port, () => {
   console.log(`Server is running at http://localhost:${port}`);
 });

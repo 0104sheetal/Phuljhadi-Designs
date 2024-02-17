@@ -1,73 +1,98 @@
 require('dotenv').config();
+const { Shopify, ApiVersion } = require('@shopify/shopify-api');
 const express = require('express');
-const crypto = require('crypto');
-const axios = require('axios');
-const bodyParser = require('body-parser');
 const app = express();
-const port = process.env.PORT || 3000;
 
-const apiKey = process.env.SHOPIFY_API_KEY;
-const apiSecret = process.env.SHOPIFY_API_SECRET;
-const scopes = 'write_discounts,read_products,write_products';
-const forwardingAddress = process.env.HOST;
+const {
+  SHOPIFY_API_KEY,
+  SHOPIFY_API_SECRET,
+  SHOPIFY_ORDER_DISCOUNT_ID,
+  SCOPES,
+  HOST
+} = process.env;
 
-app.use(bodyParser.json());
+Shopify.Context.initialize({
+  API_KEY: SHOPIFY_API_KEY,
+  API_SECRET_KEY: SHOPIFY_API_SECRET,
+  SCOPES: SCOPES.split(','),
+  HOST_NAME: HOST.replace(/https:\/\//, ""),
+  API_VERSION: ApiVersion.October21, // Adjust API version as needed
+  IS_EMBEDDED_APP: true,
+  // other options...
+});
 
-// Route for installing the app
-app.get('/shopify', (req, res) => {
-    const shop = req.query.shop;
-    if (shop) {
-        const state = crypto.randomBytes(16).toString('hex');
-        const redirectUri = forwardingAddress + '/shopify/callback';
-        const installUrl = `https://${shop}/admin/oauth/authorize?client_id=${apiKey}&scope=${scopes}&state=${state}&redirect_uri=${redirectUri}`;
+// Handle app installation
+app.get('/install', async (req, res) => {
+  const { shop } = req.query;
+  const authRoute = await Shopify.Auth.beginAuth(
+    req, res, shop, '/auth/callback', true,
+  );
+  return res.redirect(authRoute);
+});
 
-        console.log('Redirecting to installation URL:', installUrl);
-        res.cookie('state', state);
-        res.redirect(installUrl);
+// Handle post-installation auth callback
+app.get('/auth/callback', async (req, res) => {
+  try {
+    const session = await Shopify.Auth.validateAuthCallback(req, res, req.query);
+    const { accessToken, shop } = session;
+
+    // Register the discount functionality with the shop
+    const registrationResult = await registerDiscountFunction(shop, accessToken, SHOPIFY_ORDER_DISCOUNT_ID);
+
+    if (registrationResult.success) {
+      // The app is installed and the discount functionality is registered
+      res.redirect(`https://${shop}/admin/apps`);
     } else {
-        console.error('Missing shop parameter');
-        return res.status(400).send('Missing shop parameter. Please add ?shop=your-development-shop.myshopify.com to your request');
+      // Handle errors
+      console.error(registrationResult.error);
+      res.status(500).send('Error registering discount functionality');
     }
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Auth callback error');
+  }
 });
 
-// Route for OAuth callback
-app.get('/shopify/callback', (req, res) => {
-    const { shop, hmac, code, state } = req.query;
-    const stateCookie = req.cookies.state;
+// Function to register discount functionality
+async function registerDiscountFunction(shop, accessToken, functionId) {
+  const client = new Shopify.Clients.Graphql(shop, accessToken);
 
-    if (state !== stateCookie) {
-        console.error('Invalid state parameter');
-        return res.status(403).send('Request origin cannot be verified');
+  const mutation = `mutation {
+    discountAutomaticAppCreate(automaticAppDiscount: {
+      title: "Messold",
+      functionId: "${functionId}",
+      startsAt: "2023-11-22T00:00:00"
+    }) {
+       automaticAppDiscount {
+        discountId
+       }
+       userErrors {
+        field
+        message
+       }
     }
+  }`;
 
-    const accessTokenRequestUrl = `https://${shop}/admin/oauth/access_token`;
-    const accessTokenPayload = {
-        client_id: apiKey,
-        client_secret: apiSecret,
-        code,
-    };
+  try {
+    const response = await client.query({
+      data: mutation
+    });
 
-    axios.post(accessTokenRequestUrl, accessTokenPayload)
-        .then(response => {
-            const accessToken = response.data.access_token;
-            console.log('OAuth access token:', accessToken);
-            // Use access token to make API calls to 'shop' endpoint
-            res.status(200).end('App installed');
-        })
-        .catch(error => {
-            console.error('Error getting OAuth access token:', error.message);
-            res.status(500).send('Error getting OAuth access token');
-        });
+    if (response.body.data.discountAutomaticAppCreate.userErrors.length > 0) {
+      return { success: false, error: response.body.data.discountAutomaticAppCreate.userErrors };
+    } else {
+      return { success: true, discountId: response.body.data.discountAutomaticAppCreate.automaticAppDiscount.discountId };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+app.get('/', (req, res) => {
+  res.send('Hello World!');
 });
 
-// Webhook endpoint for cart updates
-app.post('/webhook/cart-update', (req, res) => {
-    console.log('Received cart update webhook:', req.body);
-    // Your webhook processing logic goes here
-    res.status(200).send('Webhook processed');
-});
-
-// Start the server
-app.listen(port, () => {
-    console.log(`Server listening at http://localhost:${port}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is listening on port ${PORT}`);
 });

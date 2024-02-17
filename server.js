@@ -14,6 +14,8 @@ const apiSecret = process.env.SHOPIFY_API_SECRET;
 const scopes = process.env.SCOPES;
 const redirectUri = `${process.env.HOST}/auth/callback`;
 
+app.use(express.json());
+
 // Helper function to validate HMAC
 function validateHMAC(query) {
   const { hmac, ...rest } = query;
@@ -38,60 +40,60 @@ function validateHMAC(query) {
   return hashEquals;
 }
 
-// Route to handle app installation
-app.get('/', (req, res) => {
-  console.log('Received a request at root:', req.query);
-  if (req.query.shop && validateHMAC(req.query)) {
-    const shop = req.query.shop;
-    const state = crypto.randomBytes(16).toString('hex');
-    const installUrl = `https://${shop}/admin/oauth/authorize?client_id=${apiKey}&scope=${scopes}&state=${state}&redirect_uri=${redirectUri}`;
-    
-    console.log('Redirecting to Shopify for OAuth:', installUrl);
-    res.redirect(installUrl);
-  } else {
-    console.error('Missing or invalid parameters on root request');
-    res.status(400).send('Required parameters missing or invalid');
-  }
-});
-
-// OAuth callback route
-app.get('/auth/callback', async (req, res) => {
-  console.log('Received OAuth callback:', req.query);
-  if (!validateHMAC(req.query)) {
-    console.error('HMAC validation failed at OAuth callback');
-    return res.status(400).send('HMAC validation failed');
-  }
-
+// Function to create an automatic discount
+const createDiscount = async (shop, accessToken) => {
+  console.log(`Creating discount for shop ${shop}`);
   try {
-    const { shop, code } = req.query;
-    const tokenResponse = await axios.post(`https://${shop}/admin/oauth/access_token`, {
-      client_id: apiKey,
-      client_secret: apiSecret,
-      code,
+    const mutation = `mutation {
+      discountAutomaticAppCreate(automaticAppDiscount: {
+        title: "Messold",
+        functionId: "a434cfd1-f52f-4657-9071-898522239e39",
+        startsAt: "2023-11-22T00:00:00Z"
+      }) {
+        automaticAppDiscount {
+          discountId
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }`;
+
+    const response = await axios.post(`https://${shop}/admin/api/2021-01/graphql.json`, {
+      query: mutation
+    }, {
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json',
+      }
     });
 
-    const accessToken = tokenResponse.data.access_token;
-    console.log('Access token received:', accessToken);
-
-    // Set the access token in your environment variables (not recommended for production)
-    // In a production app, you would securely store the access token
-    process.env.SHOPIFY_ACCESS_TOKEN = accessToken;
-
-    console.log('App installation successful');
-    res.redirect('/success');
+    console.log('Discount creation response:', response.data);
+    return response.data.data.discountAutomaticAppCreate.automaticAppDiscount.discountId;
   } catch (error) {
-    console.error('Error getting Shopify access token:', error.response || error);
-    res.status(500).send('Error during OAuth callback');
+    console.error('Error creating discount:', error.response || error);
+    throw new Error('Failed to create discount');
+  }
+};
+
+// ... [existing route handlers]
+
+// Example route to trigger discount creation
+app.post('/create-discount', async (req, res) => {
+  const { shop, accessToken } = req.body; // You would get these values securely, e.g., from your database or environment variables
+  try {
+    const discountId = await createDiscount(shop, accessToken);
+    console.log(`Discount created with ID: ${discountId}`);
+    res.status(200).json({ success: true, discountId: discountId });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Success route
-app.get('/success', (req, res) => {
-  console.log('Redirected to success page');
-  res.send('The app has been successfully installed.');
-});
+// ... [other routes and app.listen]
 
-// Start the server
 app.listen(port, () => {
   console.log(`Server is running at http://localhost:${port}`);
 });

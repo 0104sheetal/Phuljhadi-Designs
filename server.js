@@ -14,21 +14,31 @@ app.use(bodyParser.json({
 }));
 
 // Helper function to validate Shopify's HMAC signature
-function validateWebhookHMAC(req) {
-  const hmacHeader = req.get('X-Shopify-Hmac-Sha256');
-  const generatedHash = crypto
-    .createHmac('sha256', process.env.SHOPIFY_API_SECRET)
-    .update(req.rawBody)
-    .digest('base64');
-  return hmacHeader === generatedHash;
+function validateHMAC(headers, rawBody) {
+  const hmac = headers['x-shopify-hmac-sha256'];
+  const hash = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET).update(rawBody).digest('base64');
+  return hash === hmac;
 }
 
-// Function to create a discount using Shopify's GraphQL API
+// Function to create a discount using Shopify GraphQL API
 async function createDiscount(shop, accessToken) {
-  const graphqlURL = `https://${shop}/admin/api/2021-01/graphql.json`;
-
-  const mutation = `mutation discountAutomaticAppCreate($automaticAppDiscount: AutomaticAppDiscountInput!) {
-    discountAutomaticAppCreate(automaticAppDiscount: $automaticAppDiscount) {
+  const mutation = `mutation {
+    discountAutomaticAppCreate(automaticAppDiscount: {
+      title: "Messold",
+      startsAt: "2023-11-22T00:00:00Z",
+      targetType: "LINE_ITEM",
+      customerSelection: {
+        all: {}
+      },
+      customerGets: {
+        value: {
+          percentage: 10
+        },
+        items: {
+          all: {}
+        }
+      }
+    }) {
       automaticAppDiscount {
         id
       }
@@ -39,29 +49,16 @@ async function createDiscount(shop, accessToken) {
     }
   }`;
 
-  const variables = {
-    automaticAppDiscount: {
-      title: "Messold",
-      startsAt: new Date().toISOString(),
-      targetType: "LINE_ITEM",
-      customerGets: {
-        items: {
-          all: true,
-        },
-        value: {
-          percentage: 10
-        }
-      }
-    }
-  };
-
-  const headers = {
-    'X-Shopify-Access-Token': accessToken,
-    'Content-Type': 'application/json'
-  };
-
   try {
-    const response = await axios.post(graphqlURL, JSON.stringify({ query: mutation, variables: variables }), { headers: headers });
+    const response = await axios.post(`https://${shop}/admin/api/2021-01/graphql.json`, {
+      query: mutation
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': accessToken,
+      }
+    });
+
     console.log('Discount created:', response.data);
     return response.data.data.discountAutomaticAppCreate.automaticAppDiscount.id;
   } catch (error) {
@@ -70,30 +67,29 @@ async function createDiscount(shop, accessToken) {
   }
 }
 
-// Endpoint to handle webhooks
-app.post('/webhook/cart/update', async (req, res) => {
-  if (!validateWebhookHMAC(req)) {
-    console.error('Failed webhook HMAC validation');
-    return res.status(401).end('Webhook HMAC validation failed');
+// Webhook endpoint for cart updates
+app.post('/webhooks/cart/update', async (req, res) => {
+  if (!validateHMAC(req.headers, req.rawBody)) {
+    return res.status(401).send('HMAC validation failed');
   }
 
   console.log('Received cart update webhook:', req.body);
 
-  // Implement your logic to determine when to create a discount.
-  // For example, you can check the cart's total price and decide if a discount should be applied.
-  // For now, let's assume we always want to create a discount when this webhook is called.
+  // Use your shop domain and access token from environment variables
+  const shop = 'messoldtech.myshopify.com';
+  const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
 
   try {
-    const discountId = await createDiscount(req.body.shop_domain, process.env.SHOPIFY_ACCESS_TOKEN);
+    const discountId = await createDiscount(shop, accessToken);
     console.log(`Discount created with ID: ${discountId}`);
-    res.status(200).send('Webhook processed and discount created');
+    res.status(200).send(`Webhook processed and discount created with ID: ${discountId}`);
   } catch (error) {
-    console.error('Error processing webhook:', error);
-    res.status(500).send('Internal Server Error');
+    console.error('Failed to create discount:', error.message);
+    res.status(500).send('Failed to create discount');
   }
 });
 
-// Start server
+// Start the server
 app.listen(port, () => {
   console.log(`Server is running at http://localhost:${port}`);
 });

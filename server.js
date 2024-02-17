@@ -1,98 +1,58 @@
-require('dotenv').config();
-const { Shopify, ApiVersion } = require('@shopify/shopify-api');
 const express = require('express');
+const dotenv = require('dotenv');
+const axios = require('axios');
+
+// Load environment variables from .env file
+dotenv.config();
+
 const app = express();
+const port = process.env.PORT || 3000;
 
-const {
-  SHOPIFY_API_KEY,
-  SHOPIFY_API_SECRET,
-  SHOPIFY_ORDER_DISCOUNT_ID,
-  SCOPES,
-  HOST
-} = process.env;
+// Replace with your app's credentials and the store's URL
+const apiKey = process.env.SHOPIFY_API_KEY;
+const apiSecret = process.env.SHOPIFY_API_SECRET;
+const scopes = process.env.SCOPES;
+const storeUrl = process.env.SHOP_URL; // e.g., 'your-store.myshopify.com'
+const redirectUri = `${process.env.HOST}/auth/callback`;
 
-Shopify.Context.initialize({
-  API_KEY: SHOPIFY_API_KEY,
-  API_SECRET_KEY: SHOPIFY_API_SECRET,
-  SCOPES: SCOPES.split(','),
-  HOST_NAME: HOST.replace(/https:\/\//, ""),
-  API_VERSION: ApiVersion.October21, // Adjust API version as needed
-  IS_EMBEDDED_APP: true,
-  // other options...
+// Route for installing the app
+app.get('/install', (req, res) => {
+  const installUrl = `https://${storeUrl}/admin/oauth/authorize?client_id=${apiKey}&scope=${scopes}&redirect_uri=${redirectUri}`;
+  res.redirect(installUrl);
 });
 
-// Handle app installation
-app.get('/install', async (req, res) => {
-  const { shop } = req.query;
-  const authRoute = await Shopify.Auth.beginAuth(
-    req, res, shop, '/auth/callback', true,
-  );
-  return res.redirect(authRoute);
-});
-
-// Handle post-installation auth callback
+// Route for handling the OAuth callback
 app.get('/auth/callback', async (req, res) => {
+  const { code } = req.query;
+
+  // Exchange temporary code for a permanent access token
   try {
-    const session = await Shopify.Auth.validateAuthCallback(req, res, req.query);
-    const { accessToken, shop } = session;
-
-    // Register the discount functionality with the shop
-    const registrationResult = await registerDiscountFunction(shop, accessToken, SHOPIFY_ORDER_DISCOUNT_ID);
-
-    if (registrationResult.success) {
-      // The app is installed and the discount functionality is registered
-      res.redirect(`https://${shop}/admin/apps`);
-    } else {
-      // Handle errors
-      console.error(registrationResult.error);
-      res.status(500).send('Error registering discount functionality');
-    }
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Auth callback error');
-  }
-});
-
-// Function to register discount functionality
-async function registerDiscountFunction(shop, accessToken, functionId) {
-  const client = new Shopify.Clients.Graphql(shop, accessToken);
-
-  const mutation = `mutation {
-    discountAutomaticAppCreate(automaticAppDiscount: {
-      title: "Messold",
-      functionId: "${functionId}",
-      startsAt: "2023-11-22T00:00:00"
-    }) {
-       automaticAppDiscount {
-        discountId
-       }
-       userErrors {
-        field
-        message
-       }
-    }
-  }`;
-
-  try {
-    const response = await client.query({
-      data: mutation
+    const tokenResponse = await axios.post(`https://${storeUrl}/admin/oauth/access_token`, {
+      client_id: apiKey,
+      client_secret: apiSecret,
+      code,
     });
 
-    if (response.body.data.discountAutomaticAppCreate.userErrors.length > 0) {
-      return { success: false, error: response.body.data.discountAutomaticAppCreate.userErrors };
-    } else {
-      return { success: true, discountId: response.body.data.discountAutomaticAppCreate.automaticAppDiscount.discountId };
-    }
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
+    const accessToken = tokenResponse.data.access_token;
 
-app.get('/', (req, res) => {
-  res.send('Hello World!');
+    // Here you would normally save the access token to your database
+    // Since this app is for a single store, you can just set it in the environment
+    process.env.SHOPIFY_ACCESS_TOKEN = accessToken;
+
+    // Redirect to a confirmation page or the app dashboard
+    res.redirect('/success');
+  } catch (error) {
+    console.error('Failed to exchange code for access token', error);
+    res.status(500).send('Something went wrong during the authentication process.');
+  }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is listening on port ${PORT}`);
+// Route to confirm successful installation
+app.get('/success', (req, res) => {
+  res.send('The app has been successfully installed.');
+});
+
+// Start the server
+app.listen(port, () => {
+  console.log(`Example app listening at http://localhost:${port}`);
 });

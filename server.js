@@ -7,12 +7,6 @@ const bodyParser = require('body-parser');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Shopify credentials and API secret from environment variables
-const apiKey = process.env.SHOPIFY_API_KEY;
-const apiSecret = process.env.SHOPIFY_API_SECRET;
-const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
-const shop = 'messoldtech.myshopify.com'; // Replace with your actual shop domain
-
 app.use(bodyParser.json({
   verify: (req, res, buf) => {
     req.rawBody = buf.toString();
@@ -22,13 +16,16 @@ app.use(bodyParser.json({
 // Helper function to validate Shopify's HMAC signature
 function validateHMAC(headers, rawBody) {
   const receivedHmac = headers['x-shopify-hmac-sha256'];
-  const calculatedHash = crypto.createHmac('sha256', apiSecret).update(rawBody, 'utf8').digest('base64');
+  const calculatedHash = crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET).update(rawBody, 'utf8').digest('base64');
+  
+  console.log('Received HMAC:', receivedHmac);
+  console.log('Calculated HMAC:', calculatedHash);
   
   return receivedHmac === calculatedHash;
 }
 
 // Function to create a discount using Shopify GraphQL API
-async function createDiscount() {
+async function createDiscount(shop, accessToken) {
   const mutation = `mutation {
     discountAutomaticAppCreate(automaticAppDiscount: {
       title: "Messold",
@@ -57,7 +54,7 @@ async function createDiscount() {
   }`;
 
   try {
-    const response = await axios.post(`https://${shop}/admin/api/2024-01/graphql.json`, {
+    const response = await axios.post(`https://${shop}/admin/api/2021-01/graphql.json`, {
       query: mutation
     }, {
       headers: {
@@ -74,27 +71,29 @@ async function createDiscount() {
   }
 }
 
-// Endpoint to handle app installation
-app.get('/install', async (req, res) => {
-  try {
-    const discountId = await createDiscount();
-    console.log(`Discount created with ID: ${discountId}`);
-    res.status(200).send(`App installed and discount created with ID: ${discountId}`);
-  } catch (error) {
-    console.error('Failed to create discount upon installation:', error.message);
-    res.status(500).send('Failed to create discount upon installation');
-  }
-});
-
 // Webhook endpoint for cart updates
 app.post('/webhooks/cart/update', async (req, res) => {
+  console.log('Headers:', req.headers);
+  console.log('Raw body for HMAC validation:', req.rawBody);
+
   if (!validateHMAC(req.headers, req.rawBody)) {
     console.error('HMAC validation failed');
     return res.status(401).send('HMAC validation failed');
   }
 
   console.log('Received cart update webhook:', req.body);
-  res.status(200).send('Webhook received');
+
+  const shop = 'messoldtech.myshopify.com'; // Your Shopify shop domain
+  const accessToken = process.env.SHOPIFY_ACCESS_TOKEN; // Access token for your Shopify app
+
+  try {
+    const discountId = await createDiscount(shop, accessToken);
+    console.log(`Discount created with ID: ${discountId}`);
+    res.status(200).send(`Webhook processed and discount created with ID: ${discountId}`);
+  } catch (error) {
+    console.error('Failed to create discount:', error.message);
+    res.status(500).send('Failed to create discount');
+  }
 });
 
 // Start the server

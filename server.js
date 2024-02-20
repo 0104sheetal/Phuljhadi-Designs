@@ -1,49 +1,59 @@
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
-const crypto = require('crypto');
-const bodyParser = require('body-parser');
-
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(bodyParser.json({
-  verify: (req, res, buf) => {
-    req.rawBody = buf.toString();
+app.use(express.json());
+
+// Function to register a webhook via the Shopify API
+async function registerWebhook(shop, accessToken, topic, address) {
+  try {
+    const response = await axios.post(
+      `https://${shop}/admin/api/2022-01/webhooks.json`,
+      {
+        webhook: {
+          topic: topic,
+          address: address,
+          format: 'json'
+        }
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    console.log('Webhook registered:', response.data);
+    return response.data.webhook;
+  } catch (error) {
+    console.error('Error registering webhook:', error.response ? error.response.data : error.message);
+    return null;
   }
-}));
-
-// Helper function to validate Shopify's HMAC signature
-function validateHMAC(headers, rawBody) {
-  const receivedHmac = headers['x-shopify-hmac-sha256'];
-  // Hardcoded shared secret for testing purposes only
-  const sharedSecret = 'eaf9811b645ec5d3fe8b137b7181c8b8';
-  const calculatedHash = crypto
-    .createHmac('sha256', sharedSecret)
-    .update(rawBody, 'utf8')
-    .digest('base64');
-
-  console.log('Received HMAC:', receivedHmac);
-  console.log('Calculated HMAC:', calculatedHash);
-
-  // For troubleshooting, you might want to compare the calculated HMAC to an expected value.
-  // This is only for testing and should not be in production code.
-  const expectedHmac = 'Hardcoded HMAC for comparison';
-  console.log('Expected HMAC:', expectedHmac);
-
-  return receivedHmac === calculatedHash;
 }
 
-app.post('/webhooks/cart/update', (req, res) => {
-  console.log('Webhook received for cart update.');
+// Endpoint to initiate the webhook registration process
+// This endpoint should be called manually after app installation
+app.get('/register-webhook', async (req, res) => {
+  const shop = 'myshop.myshopify.com'; // Replace with your shop domain
+  const accessToken = process.env.SHOPIFY_ACCESS_TOKEN; // Replace with your access token
+  const topic = 'carts/update';
+  const address = `${process.env.HOST}/webhooks/cart/update`; // Your webhook endpoint URL
 
-  if (!validateHMAC(req.headers, req.rawBody)) {
-    console.error('HMAC validation failed');
-    return res.status(401).send('Unauthorized: HMAC validation failed');
+  const webhook = await registerWebhook(shop, accessToken, topic, address);
+  if (webhook) {
+    res.status(200).json({ success: true, data: webhook });
+  } else {
+    res.status(500).json({ success: false, message: 'Failed to register webhook' });
   }
+});
 
-  console.log('HMAC validated successfully. Processing webhook data.');
-  res.status(200).send('Webhook processed');
+// Your webhook endpoint
+app.post('/webhooks/cart/update', (req, res) => {
+  console.log('Received cart update webhook:', req.body);
+  // Process the webhook data here
+  res.status(200).send('Webhook received');
 });
 
 app.get('/', (req, res) => {

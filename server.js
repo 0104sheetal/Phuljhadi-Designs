@@ -163,6 +163,10 @@ app.post('/webhooks/cart/update', async (req, res) => {
   }
 });
 
+app.get('/', (req, res) => {
+  res.send('Hello World!');
+});
+
 // Start the server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);

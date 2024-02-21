@@ -1,10 +1,32 @@
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
+const crypto = require('crypto');
+const bodyParser = require('body-parser');
+
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(express.json());
+// Middleware to capture raw body data for HMAC validation
+app.use(bodyParser.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
+
+// Helper function to validate Shopify's HMAC signature
+function validateHMAC(headers, rawBody) {
+  const receivedHmac = headers['x-shopify-hmac-sha256'];
+  const calculatedHash = crypto
+    .createHmac('sha256', process.env.SHOPIFY_API_SECRET)
+    .update(rawBody, 'utf8')
+    .digest('base64');
+
+  console.log('Received HMAC:', receivedHmac);
+  console.log('Calculated HMAC:', calculatedHash);
+
+  return receivedHmac === calculatedHash;
+}
 
 // Function to register a webhook via the Shopify API
 async function registerWebhook(shop, accessToken, topic, address) {
@@ -33,33 +55,39 @@ async function registerWebhook(shop, accessToken, topic, address) {
   }
 }
 
-// Endpoint to initiate the webhook registration process
-// This endpoint should be called manually after app installation
-app.get('/register-webhook', async (req, res) => {
-  const shop = 'myshop.myshopify.com'; // Replace with your shop domain
-  const accessToken = process.env.SHOPIFY_ACCESS_TOKEN; // Replace with your access token
-  const topic = 'carts/update';
-  const address = `${process.env.HOST}/webhooks/cart/update`; // Your webhook endpoint URL
+// Endpoint to handle cart updates
+app.post('/webhooks/cart/update', async (req, res) => {
+  if (!validateHMAC(req.headers, req.rawBody)) {
+    console.error('HMAC validation failed');
+    return res.status(401).send('Unauthorized: HMAC validation failed');
+  }
 
-  const webhook = await registerWebhook(shop, accessToken, topic, address);
-  if (webhook) {
-    res.status(200).json({ success: true, data: webhook });
+  console.log('Received cart update webhook:', req.body);
+  res.status(200).send('Webhook processed');
+});
+
+// OAuth callback endpoint where you should handle the OAuth process
+app.get('/auth/shopify/callback', async (req, res) => {
+  // Here you would handle the OAuth process and obtain an access token
+  // For the purpose of this example, we're using placeholder values
+  const shop = 'your-shop.myshopify.com'; // Replace with the actual shop domain
+  const accessToken = 'your-access-token'; // Replace with the actual access token obtained from the OAuth process
+
+  // Define the topic and the endpoint that Shopify should hit for the webhook
+  const webhookTopic = 'carts/update';
+  const webhookAddress = `${process.env.HOST}/webhooks/cart/update`;
+
+  // Register the webhook
+  const registeredWebhook = await registerWebhook(shop, accessToken, webhookTopic, webhookAddress);
+
+  if (registeredWebhook) {
+    res.send('App installed and webhook registered.');
   } else {
-    res.status(500).json({ success: false, message: 'Failed to register webhook' });
+    res.status(500).send('Failed to register webhook.');
   }
 });
 
-// Your webhook endpoint
-app.post('/webhooks/cart/update', (req, res) => {
-  console.log('Received cart update webhook:', req.body);
-  // Process the webhook data here
-  res.status(200).send('Webhook received');
-});
-
-app.get('/', (req, res) => {
-  res.send('Hello World!');
-});
-
+// Start the server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
